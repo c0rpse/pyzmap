@@ -3,3 +3,8 @@
 pyzmap/__init__.pyc
 pyzmap/zmap.pyc
 test.py
+*.txt
+*.json
+pyzmap/utils.pyc
+zmap.json
+zmap.txt
