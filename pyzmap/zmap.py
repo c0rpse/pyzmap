@@ -90,7 +90,10 @@ class PortScanner(object):
         self._output_filter = {'success': 1, 'repeat': 0}
         self._output_module = 'json'
         self.__process = None
-
+        self._zmap_err_keep_trace = []
+        self._zmap_warn_keep_trace = []
+        self._zmap_info_keep_trace = []
+        self._output_path = None
         # regex used to detect zmap
         version_regex = re.compile(r'zmap (([0-9]*?\.){2}[0-9]*)')
 
@@ -149,6 +152,7 @@ class PortScanner(object):
 
         :returns: scan_result as dictionnary
         """
+        self._output_path = output_path
         if sys.version_info[0] == 2:
             assert type(hosts) in (str, unicode), 'Wrong type for [hosts], should be a string [was {0}]'.format(
                 type(hosts))
@@ -164,14 +168,11 @@ class PortScanner(object):
             assert type(arguments) is str, 'Wrong type for [arguments], should be a string [was {0}]'.format(
                 type(arguments))
 
-        # for redirecting_output in ['-oX', '-oA']:
-        #     assert redirecting_output not in arguments, 'Xml output can\'t be redirected from command line.\nYou can access it after a scan using:\nnmap.nm.get_nmap_last_output()'  # noqa
-
         hosts_args = shlex.split(hosts)
         comms_args = shlex.split(arguments)
         args = [self._zmap_path] + hosts_args + ['-p', str(port)] * (port is not None) + comms_args
         if '-o' not in comms_args:
-            args += ['-o', output_path]
+            args += ['-o', self._output_path]
         if '-O' not in comms_args:
             args += ['-O', self._output_module]
         if '--output-fields' not in comms_args:
@@ -190,10 +191,6 @@ class PortScanner(object):
         (self._zmap_last_output, zmap_err) = p.communicate()
         self._zmap_last_output = bytes.decode(self._zmap_last_output.encode())
         zmap_err = bytes.decode(zmap_err)
-
-        zmap_err_keep_trace = []
-        zmap_warn_keep_trace = []
-        zmap_info_keep_trace = []
         if len(zmap_err) > 0:
             regex_warn = re.compile('^.*?\[WARN\].*', re.IGNORECASE)
             regex_info = re.compile('^.*?\[INFO\].*', re.IGNORECASE)
@@ -201,14 +198,14 @@ class PortScanner(object):
                 if len(line) > 0:
                     rgw = regex_warn.search(line)
                     if rgw is not None:
-                        zmap_warn_keep_trace.append(line+os.linesep)
+                        self._zmap_warn_keep_trace.append(line+os.linesep)
                     else:
                         rgi = regex_info.search(line)
                         if rgi is not None:
-                            zmap_info_keep_trace.append(line + os.linesep)
+                            self._zmap_info_keep_trace.append(line + os.linesep)
                         else:
-                            zmap_err_keep_trace.append(line + os.linesep)
-        print self._zmap_last_output
+                            self._zmap_err_keep_trace.append(line + os.linesep)
+        return self
 
 
     def zmap_version(self):
@@ -254,3 +251,17 @@ class PortScannerError(Exception):
         return 'PortScannerError exception {0}'.format(self.value)
 
 
+def get_last_online_version():
+    """
+    Gets last pyzmap published version
+
+    WARNING : it does an http connection to https://raw.githubusercontent.com/c0rpse/pyzmap/master/pyzmap_CURRENT_VERSION.txt
+
+    :returns: a string which indicate last published version (example :'0.0.1')
+
+    """
+    import httplib
+    conn = httplib.HTTPSConnection("raw.githubusercontent.com")
+    conn.request("GET", "/c0rpse/pyzmap/master/pyzmap_CURRENT_VERSION.txt")
+    online_version = bytes.decode(conn.getresponse().read()).strip()
+    return online_version
