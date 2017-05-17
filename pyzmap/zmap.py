@@ -169,7 +169,7 @@ class PortScanner(object):
         args = [self._zmap_path] + hosts_args + ['-p', str(port)] * (port is not None) + comms_args
         if '-C' not in comms_args:
             self._output_path = comms_args[comms_args.index('-o') + 1] \
-                if '-o' in comms_args else self.generate_output_path()
+                if '-o' in comms_args else self._generate_output_path()
             if '-o' not in comms_args:
                 args += ['-o', self._output_path]
             if '-O' not in comms_args:
@@ -218,7 +218,7 @@ class PortScanner(object):
         """
         return self._zmap_version_number, self._zmap_subversion_number
 
-    def generate_output_path(self):
+    def _generate_output_path(self):
         import hashlib
         import time
         import datetime
