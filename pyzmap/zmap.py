@@ -90,10 +90,8 @@ class PortScanner(object):
         self._output_filter = {'success': 1, 'repeat': 0}
         self._output_module = 'json'
         self.__process = None
-        self._zmap_err_keep_trace = []
-        self._zmap_warn_keep_trace = []
-        self._zmap_info_keep_trace = []
         self._output_path = None
+        self._max_bandwitch = '10M'
         # regex used to detect zmap
         version_regex = re.compile(r'zmap (([0-9]*?\.){2}[0-9]*)')
 
@@ -134,7 +132,7 @@ class PortScanner(object):
             raise PortScannerError('zmap program was not found in path')
         return
 
-    def scan(self, hosts='127.0.0.1', port=80, arguments='', output_path='zmap.json', sudo=False):
+    def scan(self, hosts='127.0.0.1', port=80, arguments='--dryrun', sudo=False):
         """
         Scan given hosts
 
@@ -146,13 +144,11 @@ class PortScanner(object):
 
         :param hosts: string for hosts as zmap use , such as '198.116.0.12' or '198.116.0.12/24 216.163.128.20/20'
         :param port: string for port as zmap use it , such as '22' or '3389'
-        :param output_path: string for output save path
         :param arguments: string of arguments for zmap '-N -B -p'
         :param sudo: launch zmap with sudo if True
 
         :returns: scan_result as dictionnary
         """
-        self._output_path = output_path
         if sys.version_info[0] == 2:
             assert type(hosts) in (str, unicode), 'Wrong type for [hosts], should be a string [was {0}]'.format(
                 type(hosts))
@@ -171,15 +167,21 @@ class PortScanner(object):
         hosts_args = shlex.split(hosts)
         comms_args = shlex.split(arguments)
         args = [self._zmap_path] + hosts_args + ['-p', str(port)] * (port is not None) + comms_args
-        if '-o' not in comms_args:
-            args += ['-o', self._output_path]
-        if '-O' not in comms_args:
-            args += ['-O', self._output_module]
-        if '--output-fields' not in comms_args:
-            args += ['--output-fields', ','.join(self._output_fields)]
-        if '--output-filter' not in comms_args:
-            args += ['--output-filter',
-                     '"' + '&&'.join([k + '=' + str(self._output_filter[k]) for k in self._output_filter]) + '"']
+        if '-C' not in comms_args:
+            self._output_path = comms_args[comms_args.index('-o') + 1] \
+                if '-o' in comms_args else self.generate_output_path()
+            if '-o' not in comms_args:
+                args += ['-o', self._output_path]
+            if '-O' not in comms_args:
+                args += ['-O', self._output_module]
+            if '--output-fields' not in comms_args:
+                args += ['--output-fields', ','.join(self._output_fields)]
+            if '-B' not in comms_args:
+                args += ['-B', self._max_bandwitch]
+            if '--output-filter' not in comms_args:
+                args += ['--output-filter',
+                         '"' + '&&'.join([k + '=' + str(self._output_filter[k]) for k in self._output_filter]) + '"']
+
         if sudo:
             args = ['sudo'] + args
         p = subprocess.Popen(args, bufsize=100000,
@@ -191,6 +193,7 @@ class PortScanner(object):
         (self._zmap_last_output, zmap_err) = p.communicate()
         self._zmap_last_output = bytes.decode(self._zmap_last_output.encode())
         zmap_err = bytes.decode(zmap_err)
+        zmap_err_keep_trace, zmap_warn_keep_trace, zmap_info_keep_trace = ([] for i in xrange(3))
         if len(zmap_err) > 0:
             regex_warn = re.compile('^.*?\[WARN\].*', re.IGNORECASE)
             regex_info = re.compile('^.*?\[INFO\].*', re.IGNORECASE)
@@ -198,15 +201,14 @@ class PortScanner(object):
                 if len(line) > 0:
                     rgw = regex_warn.search(line)
                     if rgw is not None:
-                        self._zmap_warn_keep_trace.append(line+os.linesep)
+                        zmap_warn_keep_trace.append(line+os.linesep)
                     else:
                         rgi = regex_info.search(line)
                         if rgi is not None:
-                            self._zmap_info_keep_trace.append(line + os.linesep)
+                            zmap_info_keep_trace.append(line + os.linesep)
                         else:
-                            self._zmap_err_keep_trace.append(line + os.linesep)
-        return self
-
+                            zmap_err_keep_trace.append(line + os.linesep)
+        return self._output_path, zmap_err_keep_trace, zmap_warn_keep_trace, zmap_info_keep_trace
 
     def zmap_version(self):
         """
@@ -215,6 +217,16 @@ class PortScanner(object):
         :returns: (zmap_version_number, zmap_subversion_number)
         """
         return self._zmap_version_number, self._zmap_subversion_number
+
+    def generate_output_path(self):
+        import hashlib
+        import time
+        import datetime
+        m2 = hashlib.md5()
+        m2.update(str(time.time()))
+        path_name = m2.hexdigest()
+        date = datetime.datetime.now().strftime('%Y-%m-%d')
+        return date + '-' + path_name + '.json'
 
     def zmap_path(self):
         """
@@ -232,6 +244,21 @@ class PortScanner(object):
         :returns: string containing the last text output of zmap in raw text
         """
         return self._zmap_last_output
+
+
+def __scan_progressive__(self, hosts, ports, arguments, callback, sudo):
+    """
+    Used by PortScannerAsync for callback
+    """
+    for host in self._zm.listscan(hosts):
+        try:
+            scan_data = self._zm.scan(host, ports, arguments, sudo)
+        except PortScannerError:
+            scan_data = None
+
+        if callback is not None:
+            callback(host, scan_data)
+    return
 
 
 class PortScannerError(Exception):
