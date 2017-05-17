@@ -234,8 +234,6 @@ class PortScanner(object):
         return self._zmap_last_output
 
 
-
-
 class PortScannerError(Exception):
     """
     Exception error class for PortScanner class
